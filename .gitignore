@@ -1,0 +1,9 @@
+node_modules
+dist
+.agent_tmp
+tmp
+*.local
+.DS_Store
+.verify.mjs
+.env.development.local
+.env.local

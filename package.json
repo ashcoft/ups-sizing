@@ -1,0 +1,29 @@
+{
+  "name": "dc-ups-sizing-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "DC UPS load list and battery sizing workbench",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "verify": "esbuild scripts/verify.ts --bundle --platform=node --format=esm --outfile=.verify.mjs --log-level=warning && node .verify.mjs",
+    "build:pages": "vue-tsc --noEmit && vite build --base=/ups-sizing/",
+    "docker:build": "docker build -t ghcr.io/ashcoft/ups-sizing:local .",
+    "docker:run": "docker run --rm -p 8080:8080 ghcr.io/ashcoft/ups-sizing:local"
+  },
+  "dependencies": {
+    "lucide-vue-next": "^0.475.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "esbuild": "^0.28.2",
+    "typescript": "~5.7.3",
+    "vite": "^6.1.0",
+    "vue-tsc": "^2.2.0"
+  }
+}
