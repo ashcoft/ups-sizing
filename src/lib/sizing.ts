@@ -264,16 +264,20 @@ export interface AutonomyPoint {
 }
 
 export function autonomySweep(totals: Totals, config: SizingConfig, from = 30, to = 480, step = 15): AutonomyPoint[] {
-  const start = Math.min(from, config.autonomyMin)
-  const end = Math.max(to, config.autonomyMin)
+  const design = Math.min(Math.max(config.autonomyMin, 3), 1440)
+  const start = Math.min(from, design)
+  const end = Math.max(to, design)
+  // Keep the chart to a bounded number of sizing runs even for extreme inputs.
+  const safeStep = Math.max(step, (end - start) / 200)
   const points: AutonomyPoint[] = []
-  for (let minutes = start; minutes <= end; minutes += step) {
-    const result = computeSizing(totals, config, minutes)
-    points.push({ minutes, requiredAh: result.requiredAh, energyWh: result.energyWh })
+  for (let minutes = start; minutes <= end + 1e-6 && points.length < 220; minutes += safeStep) {
+    const rounded = Math.round(minutes * 10) / 10
+    const result = computeSizing(totals, config, rounded)
+    points.push({ minutes: rounded, requiredAh: result.requiredAh, energyWh: result.energyWh })
   }
-  if (!points.some((point) => point.minutes === config.autonomyMin)) {
-    const result = computeSizing(totals, config, config.autonomyMin)
-    points.push({ minutes: config.autonomyMin, requiredAh: result.requiredAh, energyWh: result.energyWh })
+  if (!points.some((point) => point.minutes === design)) {
+    const result = computeSizing(totals, config, design)
+    points.push({ minutes: design, requiredAh: result.requiredAh, energyWh: result.energyWh })
     points.sort((a, b) => a.minutes - b.minutes)
   }
   return points

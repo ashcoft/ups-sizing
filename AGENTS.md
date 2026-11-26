@@ -67,5 +67,5 @@ extend it when changing `src/lib/sizing.ts` or `src/data/workbook.ts`.
   `ashcoft/psa-tool`, so keep them in sync when bumping.
 - Pages must be enabled with `build_type: workflow`; the GHCR package needs a one-time visibility
   change to public if anonymous pulls are expected.
-- Verification is the regression gate: 42 assertions cover the workbook baseline, Kt coverage,
+- Verification is the regression gate: 43 assertions cover the workbook baseline, Kt coverage,
   import clamping, active-unit clamping, CSV neutralising and verdict rules.

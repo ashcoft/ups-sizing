@@ -111,6 +111,20 @@ export function dismissToast(id: number): void {
   toasts.value = toasts.value.filter((toast) => toast.id !== id)
 }
 
+/** Bumped whenever the whole project is replaced, retiring pending undo actions. */
+let projectEpoch = 0
+
+function retireUndoActions(): void {
+  projectEpoch += 1
+  toasts.value = toasts.value.filter((toast) => !toast.action)
+}
+
+function itemListAttached(list: LoadItem[]): boolean {
+  return project.value.systems.some(
+    (system) => system.items === list || system.sections.some((section) => section.items === list),
+  )
+}
+
 export function notify(text: string, action?: Toast['action']): void {
   const id = (toastId += 1)
   toasts.value = [...toasts.value, { id, text, action }]
@@ -216,9 +230,14 @@ export function removeItem(itemId: string): void {
   const found = locateItem(itemId)
   if (!found) return
   const [removed] = found.list.splice(found.index, 1)
+  const epoch = projectEpoch
   notify('Load removed', {
     label: 'Undo',
     run: () => {
+      if (epoch !== projectEpoch || !itemListAttached(found.list)) {
+        notify('Project changed — nothing to restore')
+        return
+      }
       found.list.splice(Math.min(found.index, found.list.length), 0, removed)
       notify('Load restored')
     },
@@ -231,9 +250,14 @@ export function removeSection(systemId: string, sectionId: string): void {
   const index = system.sections.findIndex((section) => section.id === sectionId)
   if (index < 0) return
   const [removed] = system.sections.splice(index, 1)
+  const epoch = projectEpoch
   notify('Section removed', {
     label: 'Undo',
     run: () => {
+      if (epoch !== projectEpoch || !project.value.systems.includes(system)) {
+        notify('Project changed — nothing to restore')
+        return
+      }
       system.sections.splice(Math.min(index, system.sections.length), 0, removed)
       notify('Section restored')
     },
@@ -244,9 +268,14 @@ export function removeSystem(systemId: string): void {
   const index = project.value.systems.findIndex((system) => system.id === systemId)
   if (index < 0) return
   const [removed] = project.value.systems.splice(index, 1)
+  const epoch = projectEpoch
   notify('System removed', {
     label: 'Undo',
     run: () => {
+      if (epoch !== projectEpoch || project.value.systems.some((system) => system.id === removed.id)) {
+        notify('Project changed — nothing to restore')
+        return
+      }
       project.value.systems.splice(Math.min(index, project.value.systems.length), 0, removed)
       notify('System restored')
     },
@@ -255,10 +284,16 @@ export function removeSystem(systemId: string): void {
 
 export function resetProject(): void {
   const previous = clone(project.value)
+  retireUndoActions()
   project.value = clone(workbookProject)
+  const epoch = projectEpoch
   notify('Restored workbook baseline', {
     label: 'Undo',
     run: () => {
+      if (epoch !== projectEpoch) {
+        notify('Project changed — nothing to restore')
+        return
+      }
       project.value = previous
       notify('Edited project restored')
     },
@@ -311,6 +346,7 @@ export function importProjectFile(text: string): void {
   try {
     const parsed = JSON.parse(text) as Partial<Project>
     if (!parsed || !Array.isArray(parsed.systems)) throw new Error('missing systems')
+    retireUndoActions()
     project.value = normalizeProject(parsed)
     notify('Project imported')
   } catch {
@@ -345,8 +381,7 @@ export function selectCell(capacity: number): void {
 }
 
 export function setAutonomy(minutes: number): void {
-  project.value.sizing.autonomyMin = Math.round(minutes)
-  if (project.value.sizing.autonomyMin > 0) {
-    notify(`Autonomy set to ${fmtMinutes(project.value.sizing.autonomyMin)}`)
-  }
+  if (!Number.isFinite(minutes)) return
+  project.value.sizing.autonomyMin = Math.min(Math.max(Math.round(minutes), 3), 1440)
+  notify(`Autonomy set to ${fmtMinutes(project.value.sizing.autonomyMin)}`)
 }

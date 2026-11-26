@@ -57,6 +57,9 @@ check('sweep covers 30..480', sweep[0].minutes === 30, `${sweep.length} points`)
 check('sweep includes an out-of-range design autonomy', autonomySweep(totals, { ...workbookProject.sizing, autonomyMin: 600 }).some((point) => point.minutes === 600), `${autonomySweep(totals, { ...workbookProject.sizing, autonomyMin: 600 }).length} points`)
 check('autonomy 120 lowers duty', computeSizing(totals, workbookProject.sizing, 120).requiredAh < sizing.requiredAh, computeSizing(totals, workbookProject.sizing, 120).requiredAh.toFixed(1))
 
+const hugeSweep = autonomySweep(totals, { ...workbookProject.sizing, autonomyMin: 100000 })
+check('sweep stays bounded for extreme autonomy', hugeSweep.length <= 220 && hugeSweep.some((point) => point.minutes === 1440), hugeSweep.length)
+
 const beyondTable = computeSizing(totals, workbookProject.sizing, 720)
 check('720 min duty is flagged as uncovered', !beyondTable.durationCovered, `${beyondTable.maxKtMinutes}/${beyondTable.maxDutyDuration}`)
 check(
