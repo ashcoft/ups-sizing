@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+dist
+.verify.mjs
+.git
+.gitignore
+.github
+.agent_tmp
+tmp
+*.xlsx
+*.md
+!README.md
+Dockerfile
+.dockerignore
