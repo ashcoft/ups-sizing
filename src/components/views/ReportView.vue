@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Check, CircleAlert, Printer, Download, FileSpreadsheet } from 'lucide-vue-next'
 import {
   checks,
+  designOk,
   exportProjectCsv,
   exportProjectJson,
   project,
@@ -15,6 +16,7 @@ import { fmt, fmtA, fmtAh, fmtKw, fmtMinutes, fmtPct, fmtWatts } from '@/lib/for
 
 const config = computed(() => project.value.sizing)
 const adequate = computed(() => config.value.selectedCellAh >= requiredAh.value)
+const openRequired = computed(() => checks.value.filter((check) => check.required && !check.ok))
 
 const basisRows = computed(() => [
   ['Nominal DC voltage', `${config.value.nominalVoltage} V`],
@@ -259,9 +261,9 @@ function printReport(): void {
           </div>
 
           <div class="selection__result">
-            <div class="stamp" :class="{ 'stamp--warn': !adequate }">
-              <span class="stamp__top">{{ adequate ? 'Sizing' : 'Action' }}</span>
-              <span class="stamp__big">{{ adequate ? 'Verified' : 'Review' }}</span>
+            <div class="stamp" :class="{ 'stamp--warn': !designOk }">
+              <span class="stamp__top">{{ designOk ? 'Sizing' : 'Action' }}</span>
+              <span class="stamp__big">{{ designOk ? 'Verified' : 'Review' }}</span>
               <span class="stamp__bottom">Rev {{ project.meta.revision }} · {{ fmt(sizing.endCellVoltage, 2) }} V/cell</span>
             </div>
             <p>
@@ -273,6 +275,9 @@ function printReport(): void {
               <span v-else>
                 The selected capacity is below the calculated duty by
                 {{ fmtAh(requiredAh - config.selectedCellAh, 1) }}.
+              </span>
+              <span v-if="openRequired.length" class="selection__open">
+                Open before issue: {{ openRequired.map((check) => check.label.toLowerCase()).join('; ') }}.
               </span>
             </p>
           </div>
@@ -592,6 +597,14 @@ function printReport(): void {
   font-size: 10.5px;
   line-height: 1.6;
   color: var(--muted);
+}
+
+.selection__open {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent);
 }
 
 .report__checks {

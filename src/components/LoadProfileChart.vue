@@ -104,8 +104,7 @@ const hover = ref<{ minutes: number; period: ProfilePeriod; value: number } | nu
 
 function onMove(event: PointerEvent): void {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const localX = event.clientX - rect.left
-  const ratio = Math.min(1, Math.max(0, (localX - margin.left) / plotWidth.value))
+  const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
   const minutes = ratio * xMax.value
   const period =
     props.periods.find((entry) => minutes >= entry.startMin && minutes <= entry.endMin) ??

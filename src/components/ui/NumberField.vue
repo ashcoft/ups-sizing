@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toNumber } from '@/lib/format'
+import { computed, ref } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -16,13 +16,35 @@ const props = withDefaults(
 
 const emit = defineEmits<{ 'update:modelValue': [value: number] }>()
 
+const draft = ref<string | null>(null)
+const shown = computed(() => draft.value ?? String(props.modelValue))
+
+function clamp(value: number): number {
+  const lower = props.min ?? Number.NEGATIVE_INFINITY
+  const upper = props.max ?? Number.POSITIVE_INFINITY
+  return Math.min(Math.max(value, lower), upper)
+}
+
 function onInput(event: Event): void {
-  const target = event.target as HTMLInputElement
-  if (target.value.trim() === '') {
-    emit('update:modelValue', props.min ?? 0)
+  const text = (event.target as HTMLInputElement).value
+  draft.value = text
+  if (text.trim() === '') return
+  const parsed = Number.parseFloat(text)
+  if (!Number.isFinite(parsed)) return
+  if ((props.min !== undefined && parsed < props.min) || (props.max !== undefined && parsed > props.max)) return
+  emit('update:modelValue', parsed)
+}
+
+function onBlur(): void {
+  const text = draft.value
+  draft.value = null
+  if (text === null) return
+  if (text.trim() === '') {
+    emit('update:modelValue', clamp(props.min ?? 0))
     return
   }
-  emit('update:modelValue', toNumber(target.value, props.modelValue))
+  const parsed = Number.parseFloat(text)
+  emit('update:modelValue', clamp(Number.isFinite(parsed) ? parsed : props.modelValue))
 }
 </script>
 
@@ -34,11 +56,12 @@ function onInput(event: Event): void {
         class="input"
         :class="{ 'input--suffix': !!unit }"
         type="number"
-        :value="modelValue"
+        :value="shown"
         :min="min"
         :max="max"
         :step="step"
         @input="onInput"
+        @blur="onBlur"
       />
       <span v-if="unit" class="field__suffix">{{ unit }}</span>
     </span>

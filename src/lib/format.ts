@@ -69,6 +69,9 @@ export function download(filename: string, content: string, type = 'application/
 }
 
 export function csvCell(value: string | number): string {
-  const text = String(value)
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  let text = String(value)
+  // Neutralise spreadsheet formulas in user-entered text.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }

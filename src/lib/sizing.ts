@@ -14,8 +14,16 @@ export function itemConnectedW(item: LoadItem): number {
   return item.qty * item.watt
 }
 
+/**
+ * Units actually drawing in a window. Active counts can briefly exceed the panel
+ * quantity while the quantity input is being edited, so clamp at read time.
+ */
+export function activeUnits(item: LoadItem, phase: PhaseKey): number {
+  return Math.min(Math.max(item.active[phase] || 0, 0), Math.max(item.qty, 0))
+}
+
 export function itemPhaseW(item: LoadItem, phase: PhaseKey): number {
-  return item.active[phase] * item.watt
+  return activeUnits(item, phase) * item.watt
 }
 
 export function allItems(system: LoadSystem): LoadItem[] {
@@ -68,8 +76,14 @@ export function computeTotals(systems: LoadSystem[]): Totals {
  * The manufacturer table is sampled in log–log space, which keeps the
  * curve smooth and monotonic between published points.
  */
+export function usableKtPoints(table: KtPoint[]): KtPoint[] {
+  return table
+    .filter((p) => Number.isFinite(p.minutes) && Number.isFinite(p.kt) && p.minutes > 0 && p.kt > 0)
+    .sort((a, b) => a.minutes - b.minutes)
+}
+
 export function ktAt(table: KtPoint[], minutes: number): number {
-  const points = [...table].filter((p) => p.minutes > 0 && p.kt > 0).sort((a, b) => a.minutes - b.minutes)
+  const points = usableKtPoints(table)
   if (points.length === 0) return 1
   const t = Math.max(minutes, 1e-6)
   if (t <= points[0].minutes) return points[0].kt
@@ -147,6 +161,10 @@ export interface SizingResult {
   cellsPerString: number
   endCellVoltage: number
   autonomyMin: number
+  ktPoints: number
+  maxKtMinutes: number
+  maxDutyDuration: number
+  durationCovered: boolean
 }
 
 export function computeSizing(totals: Totals, config: SizingConfig, autonomy = config.autonomyMin): SizingResult {
@@ -207,6 +225,14 @@ export function computeSizing(totals: Totals, config: SizingConfig, autonomy = c
   const peakCurrentA = periods.reduce((max, period) => Math.max(max, period.loadA), 0)
   const cellsPerString = Math.max(1, Math.round(config.nominalVoltage / 2))
 
+  const usable = usableKtPoints(config.ktTable)
+  const maxKtMinutes = usable.length > 0 ? usable[usable.length - 1].minutes : 0
+  const maxDutyDuration = sections.reduce(
+    (max, section) => section.terms.reduce((inner, term) => Math.max(inner, term.ktAtMin), max),
+    0,
+  )
+  const durationCovered = usable.length >= 2 && maxDutyDuration <= maxKtMinutes + 1e-6
+
   return {
     periods,
     sections,
@@ -224,6 +250,10 @@ export function computeSizing(totals: Totals, config: SizingConfig, autonomy = c
     cellsPerString,
     endCellVoltage: voltage / cellsPerString,
     autonomyMin: autonomy,
+    ktPoints: usable.length,
+    maxKtMinutes,
+    maxDutyDuration,
+    durationCovered,
   }
 }
 
@@ -254,43 +284,67 @@ export function smallestStandard(catalog: number[], requiredAh: number): number 
   return sorted.find((capacity) => capacity >= requiredAh) ?? null
 }
 
-export function projectChecks(result: SizingResult, config: SizingConfig) {
+export interface SizingCheck {
+  key: string
+  label: string
+  detail: string
+  ok: boolean
+  required: boolean
+}
+
+export function projectChecks(result: SizingResult, config: SizingConfig): SizingCheck[] {
   return [
     {
       key: 'capacity',
       label: 'Selected cell covers the calculated duty',
       detail: `${config.selectedCellAh} Ah selected vs ${result.requiredAh.toFixed(1)} Ah required`,
-      ok: config.selectedCellAh >= result.requiredAh,
+      ok: result.requiredAh > 0 && config.selectedCellAh >= result.requiredAh,
+      required: true,
     },
     {
-      key: 'autonomy',
-      label: 'Discharge profile spans the full autonomy window',
-      detail: `${result.autonomyMin} min at ${config.minVoltage.toFixed(0)} V minimum`,
-      ok: result.periods.length === 3 && Math.abs((result.periods[result.periods.length - 1]?.endMin ?? 0) - result.autonomyMin) < 0.01,
-    },
-    {
-      key: 'redundancy',
-      label: 'Battery configuration provides redundancy',
-      detail: `${config.redundancy} — ${config.strings} parallel strings`,
-      ok: config.strings >= 2,
+      key: 'kt-coverage',
+      label: 'Discharge data covers every duty duration',
+      detail:
+        result.ktPoints < 2
+          ? 'Kt table needs at least two valid points'
+          : `Table covers up to ${result.maxKtMinutes} min; duty reaches ${result.maxDutyDuration.toFixed(0)} min`,
+      ok: result.durationCovered,
+      required: true,
     },
     {
       key: 'end-voltage',
       label: 'End-cell voltage within manufacturer limits',
       detail: `${result.endCellVoltage.toFixed(2)} V/cell across ${result.cellsPerString} cells`,
       ok: result.endCellVoltage >= 1.75 && result.endCellVoltage <= 1.85,
+      required: true,
     },
     {
       key: 'c-rate',
       label: 'Discharge rate within battery capability',
       detail: `${result.cRate.toFixed(3)} C continuous`,
       ok: result.cRate <= 0.5,
+      required: true,
+    },
+    {
+      key: 'autonomy',
+      label: 'Discharge profile spans the full autonomy window',
+      detail: `${result.autonomyMin} min at ${config.minVoltage.toFixed(0)} V minimum`,
+      ok: result.periods.length === 3 && Math.abs((result.periods[result.periods.length - 1]?.endMin ?? 0) - result.autonomyMin) < 0.01,
+      required: true,
+    },
+    {
+      key: 'redundancy',
+      label: 'Battery configuration provides redundancy',
+      detail: `${config.redundancy} — ${config.strings} parallel strings`,
+      ok: config.strings >= 2,
+      required: false,
     },
     {
       key: 'margin',
       label: 'Aging and spare allowances applied',
       detail: `${(config.agingFactor * 100).toFixed(0)}% aging + ${(config.spareFactor * 100).toFixed(0)}% spare`,
       ok: config.agingFactor > 0 && config.spareFactor > 0,
+      required: false,
     },
   ]
 }

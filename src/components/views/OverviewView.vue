@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ArrowUpRight, Check, CircleAlert, ShieldCheck } from 'lucide-vue-next'
-import { checks, checksPassed, go, project, requiredAh, sizing, systemRows, totals } from '@/store'
+import { checks, checksPassed, designOk, go, project, requiredAh, sizing, systemRows, totals } from '@/store'
+import { PHASES } from '@/types'
 import { fmt, fmtA, fmtKw, fmtMinutes, fmtPct, fmtWatts } from '@/lib/format'
 import AnimatedNumber from '@/components/ui/AnimatedNumber.vue'
 import LoadProfileChart from '@/components/LoadProfileChart.vue'
@@ -31,11 +32,16 @@ const heroMeta = computed(() => [
   { label: 'Prepared', value: project.value.meta.preparedBy },
 ])
 
-const phaseCards = computed(() => [
-  { key: 'boc', label: 'Beginning of discharge', value: totals.value.bocW, window: '0 – 1 min' },
-  { key: 'cont', label: 'Continuous', value: totals.value.contW, window: '1 – 239 min' },
-  { key: 'eod', label: 'End of discharge', value: totals.value.eodW, window: '239 – 240 min' },
-])
+const phaseCards = computed(() =>
+  sizing.value.periods.map((period) => ({
+    key: period.phase,
+    label: PHASES.find((phase) => phase.key === period.phase)?.label ?? period.phase,
+    value: period.loadW,
+    window: `${fmt(period.startMin, 0)} – ${fmt(period.endMin, 0)} min`,
+  })),
+)
+
+const openRequired = computed(() => checks.value.filter((check) => check.required && !check.ok))
 
 const contShare = computed(() => (totals.value.connectedW > 0 ? (totals.value.contW / totals.value.connectedW) * 100 : 0))
 const governing = computed(() => sizing.value.sections[sizing.value.governingIndex])
@@ -66,9 +72,9 @@ const governing = computed(() => sizing.value.sections[sizing.value.governingInd
             </div>
             <div class="verdict__model">{{ project.sizing.cellModel }} · {{ project.sizing.redundancy }} strings</div>
           </div>
-          <div class="stamp" :class="{ 'stamp--warn': project.sizing.selectedCellAh < requiredAh }">
+          <div class="stamp" :class="{ 'stamp--warn': !designOk }">
             <span class="stamp__top">Design</span>
-            <span class="stamp__big">{{ project.sizing.selectedCellAh < requiredAh ? 'Review' : 'Verified' }}</span>
+            <span class="stamp__big">{{ designOk ? 'Verified' : 'Review' }}</span>
             <span class="stamp__bottom">Rev {{ project.meta.revision }} · {{ sizing.endCellVoltage.toFixed(2) }} V/cell</span>
           </div>
         </div>
@@ -93,12 +99,16 @@ const governing = computed(() => sizing.value.sections[sizing.value.governingInd
         </div>
 
         <ul class="verdict__checks">
-          <li v-for="check in checks.slice(0, 3)" :key="check.key">
+          <li v-for="check in checks.filter((entry) => entry.required).slice(0, 3)" :key="check.key">
             <Check v-if="check.ok" :size="12" :stroke-width="2.4" class="ok" />
             <CircleAlert v-else :size="12" :stroke-width="2.2" class="warn" />
             {{ check.label }}
           </li>
         </ul>
+
+        <p v-if="openRequired.length" class="verdict__flag">
+          {{ openRequired.length }} required check{{ openRequired.length > 1 ? 's' : '' }} open — verification withheld.
+        </p>
       </aside>
     </section>
 
@@ -124,7 +134,7 @@ const governing = computed(() => sizing.value.sections[sizing.value.governingInd
       <article class="kpi rise" style="animation-delay: 80ms">
         <div class="kpi__top">
           <span class="kpi__label">Continuous load</span>
-          <span class="pill pill--cont">240 min</span>
+          <span class="pill pill--cont">{{ fmtMinutes(project.sizing.autonomyMin) }}</span>
         </div>
         <div class="kpi__value">
           <AnimatedNumber :value="totals.contW / 1000" :digits="2" /><small>kW</small>
@@ -434,6 +444,13 @@ const governing = computed(() => sizing.value.sections[sizing.value.governingInd
   gap: 7px;
   font-size: 10.5px;
   color: var(--muted);
+}
+
+.verdict__flag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
 }
 
 .ok {

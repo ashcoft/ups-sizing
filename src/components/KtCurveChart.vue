@@ -63,9 +63,14 @@ const curve = computed(() => {
 })
 
 const yTicks = computed(() => {
+  const top = Math.max(ktMax.value, 1) * 1.1
+  const rough = top / 4
+  const magnitude = Math.pow(10, Math.floor(Math.log10(Math.max(rough, 1e-6))))
+  const step = [1, 2, 2.5, 5, 10].map((multiple) => multiple * magnitude).find((candidate) => candidate >= rough) ?? 10 * magnitude
   const ticks: number[] = []
-  const step = ktMax.value > 6 ? 2 : ktMax.value > 3 ? 1 : 0.5
-  for (let value = 0; value <= ktMax.value * 1.1; value += step) ticks.push(Number(value.toFixed(2)))
+  for (let index = 0; index <= 10 && index * step <= top + step / 2; index += 1) {
+    ticks.push(Number((index * step).toFixed(2)))
+  }
   return ticks
 })
 
@@ -75,8 +80,7 @@ const hover = ref<{ minutes: number; kt: number } | null>(null)
 
 function onMove(event: PointerEvent): void {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const localX = event.clientX - rect.left
-  const ratio = Math.min(1, Math.max(0, (localX - margin.left) / plotWidth.value))
+  const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
   const logValue = logMin.value + ratio * (logMax.value - logMin.value)
   const minutes = Math.pow(10, logValue)
   hover.value = { minutes, kt: ktAt(points.value, minutes) }

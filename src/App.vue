@@ -11,7 +11,22 @@ import {
   TableProperties,
   Zap,
 } from 'lucide-vue-next'
-import { dismissToast, exportProjectJson, go, lastSaved, project, resetProject, sizing, theme, toasts, toggleTheme, totals, view, type Toast } from '@/store'
+import {
+  dismissToast,
+  exportProjectJson,
+  go,
+  lastSaved,
+  project,
+  resetProject,
+  saveError,
+  sizing,
+  theme,
+  toasts,
+  toggleTheme,
+  totals,
+  view,
+  type Toast,
+} from '@/store'
 import { fmtMinutes } from '@/lib/format'
 import OverviewView from '@/components/views/OverviewView.vue'
 import LoadsView from '@/components/views/LoadsView.vue'
@@ -39,6 +54,7 @@ const viewComponent = computed<Component>(() => {
 })
 
 const savedLabel = computed(() => {
+  if (saveError.value) return 'Not saved — storage unavailable'
   if (!lastSaved.value) return 'Auto-save on'
   return `Saved ${new Date(lastSaved.value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
 })
@@ -131,7 +147,7 @@ const meta = computed(() => [
         </p>
         <div class="footer__meta">
           <span class="pill">{{ project.systems.length }} boards · {{ totals.items }} loads</span>
-          <span class="mono tiny dim">{{ savedLabel }}</span>
+          <span class="mono tiny" :class="saveError ? 'warn' : 'dim'">{{ savedLabel }}</span>
         </div>
       </div>
     </footer>
@@ -183,6 +199,10 @@ const meta = computed(() => [
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.warn {
+  color: var(--accent);
 }
 
 .toasts {

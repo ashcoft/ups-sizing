@@ -5,3 +5,5 @@ tmp
 *.local
 .DS_Store
 .verify.mjs
+.env.development.local
+.env.local

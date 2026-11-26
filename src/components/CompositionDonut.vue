@@ -25,11 +25,14 @@ const inner = 62
 
 const hovered = ref<number | null>(null)
 
+const positive = computed(() => props.slices.filter((slice) => slice.value > 0))
+const single = computed(() => (positive.value.length === 1 ? positive.value[0] : null))
+
 const arcs = computed(() => {
-  const total = props.slices.reduce((sum, slice) => sum + Math.max(slice.value, 0), 0) || 1
+  const total = positive.value.reduce((sum, slice) => sum + slice.value, 0) || 1
   let angle = -Math.PI / 2
-  const gap = props.slices.length > 1 ? 0.022 : 0
-  return props.slices.map((slice, index) => {
+  const gap = positive.value.length > 1 ? 0.022 : 0
+  return positive.value.map((slice, index) => {
     const sweep = Math.max((Math.max(slice.value, 0) / total) * Math.PI * 2 - gap, 0.004)
     const start = angle + gap / 2
     const end = start + sweep
@@ -67,7 +70,9 @@ function donutSlice(start: number, end: number, outer: number, innerR: number): 
   ].join(' ')
 }
 
-const activeSlice = computed(() => (hovered.value === null ? null : props.slices[hovered.value]))
+const activeSlice = computed(() =>
+  hovered.value === null ? single.value : (positive.value[hovered.value] ?? null),
+)
 
 const centerValue = computed(() =>
   activeSlice.value ? activeSlice.value.value / 1000 : props.total / 1000,
@@ -81,6 +86,18 @@ const displayUnit = computed(() => (activeSlice.value ? 'kW' : props.unit))
     <div class="donut__figure">
       <svg :width="size" :height="size" role="img" aria-label="Connected load by switchboard">
         <circle :cx="center" :cy="center" :r="(radius + inner) / 2" fill="none" stroke="var(--line-soft)" stroke-width="1" />
+        <circle
+          v-if="single"
+          :cx="center"
+          :cy="center"
+          :r="(radius + inner) / 2"
+          fill="none"
+          :stroke="single.color"
+          :stroke-width="radius - inner"
+          class="donut__arc"
+        >
+          <title>{{ single.label }} — {{ fmtKw(single.value) }}</title>
+        </circle>
         <g v-for="arc in arcs" :key="arc.label">
           <path
             :d="arc.path"

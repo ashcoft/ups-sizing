@@ -5,12 +5,15 @@ import {
   addKtPoint,
   autonomyCurve,
   checks,
+  designOk,
   go,
+  notify,
   project,
   removeKtPoint,
   requiredAh,
   selectCell,
   setAutonomy,
+  setKtField,
   sizing,
   totals,
 } from '@/store'
@@ -39,6 +42,19 @@ const selectedOption = computed({
 })
 
 const adequate = computed(() => config.value.selectedCellAh >= requiredAh.value)
+const openRequired = computed(() => checks.value.filter((check) => check.required && !check.ok))
+
+function commitKt(index: number, field: 'minutes' | 'kt', event: Event): void {
+  const input = event.target as HTMLInputElement
+  const point = config.value.ktTable[index]
+  const parsed = Number.parseFloat(input.value)
+  if (!point || !setKtField(index, field, parsed)) {
+    if (point) input.value = String(point[field])
+    notify(field === 'minutes' ? 'Duration must be positive and unique' : 'Kt must be between 0 and 100')
+    return
+  }
+  input.value = String(point[field])
+}
 
 const presets = [60, 120, 240, 300, 480]
 
@@ -112,6 +128,7 @@ const gaugeSummary = computed(() => [
               unit="min"
               :model-value="config.autonomyMin"
               :min="3"
+              :max="1440"
               :step="5"
               hint="Discharge duration"
               @update:model-value="setAutonomy($event)"
@@ -169,8 +186,8 @@ const gaugeSummary = computed(() => [
             <h2 class="card__title">Selected cell</h2>
             <p class="card__sub">{{ config.cellModel }} · {{ config.redundancy }} redundant strings</p>
           </div>
-          <span class="pill" :class="adequate ? 'pill--ok' : 'pill--warn'">
-            {{ adequate ? 'capacity covered' : 'below duty' }}
+          <span class="pill" :class="designOk ? 'pill--ok' : 'pill--warn'">
+            {{ designOk ? 'design verified' : 'review required' }}
           </span>
         </div>
         <div class="card__body outcome__body">
@@ -201,13 +218,18 @@ const gaugeSummary = computed(() => [
               </label>
             </div>
 
-            <p class="outcome__note" :class="adequate ? 'ok' : 'warn'">
-              <Check v-if="adequate" :size="13" :stroke-width="2.4" />
+            <p class="outcome__note" :class="designOk ? 'ok' : 'warn'">
+              <Check v-if="designOk" :size="13" :stroke-width="2.4" />
               <AlertTriangle v-else :size="13" :stroke-width="2.2" />
               <span v-if="adequate">
                 {{ fmtAh(config.selectedCellAh, 0) }} cell carries the {{ fmtAh(requiredAh, 1) }} duty with
-                {{ fmtPct(sizing.headroomPct, 1) }} headroom. Smallest adequate catalogue size:
-                {{ smallest ? `${smallest} Ah` : 'none — review catalogue' }}.
+                {{ fmtPct(sizing.headroomPct, 1) }} headroom.
+                <template v-if="openRequired.length">
+                  Open before issue: {{ openRequired.map((check) => check.label.toLowerCase()).join('; ') }}.
+                </template>
+                <template v-else>
+                  Smallest adequate catalogue size: {{ smallest ? `${smallest} Ah` : 'none — review catalogue' }}.
+                </template>
               </span>
               <span v-else>
                 Selected cell is {{ fmtAh(requiredAh - config.selectedCellAh, 1) }} below the calculated duty. Increase
@@ -347,11 +369,29 @@ const gaugeSummary = computed(() => [
               <tbody>
                 <tr v-for="(point, index) in config.ktTable" :key="index">
                   <td class="left">
-                    <input v-model.lazy.number="point.minutes" class="cell-input" type="number" min="0.1" step="1" />
+                    <input
+                      class="cell-input"
+                      type="number"
+                      min="0.1"
+                      max="100000"
+                      step="1"
+                      aria-label="Kt duration in minutes"
+                      :value="point.minutes"
+                      @change="commitKt(index, 'minutes', $event)"
+                    />
                     <span class="tiny dim">min</span>
                   </td>
                   <td>
-                    <input v-model.lazy.number="point.kt" class="cell-input" type="number" min="0.01" step="0.01" />
+                    <input
+                      class="cell-input"
+                      type="number"
+                      min="0.01"
+                      max="100"
+                      step="0.01"
+                      aria-label="Kt factor"
+                      :value="point.kt"
+                      @change="commitKt(index, 'kt', $event)"
+                    />
                   </td>
                   <td>
                     <button class="btn btn--sm btn--ghost btn--danger" type="button" title="Remove point" @click="removeKtPoint(index)">
@@ -362,8 +402,14 @@ const gaugeSummary = computed(() => [
               </tbody>
             </table>
           </div>
-          <p class="tiny dim kt-foot">
-            Design lookups: {{ sizing.sections.map((section) => `${fmt(ktAt(config.ktTable, section.terms[0]?.ktAtMin ?? 0), 3)}`).join(' · ') }}
+          <p class="tiny kt-foot" :class="sizing.durationCovered ? 'dim' : 'warn-text'">
+            <template v-if="sizing.durationCovered">
+              Covers up to {{ fmt(sizing.maxKtMinutes, 0) }} min; duty lookups reach {{ fmt(sizing.maxDutyDuration, 0) }} min.
+            </template>
+            <template v-else>
+              Table covers {{ fmt(sizing.maxKtMinutes, 0) }} min but the duty needs
+              {{ fmt(sizing.maxDutyDuration, 0) }} min — extend the table or shorten autonomy.
+            </template>
           </p>
         </div>
       </article>
@@ -392,6 +438,7 @@ const gaugeSummary = computed(() => [
             :points="autonomyCurve"
             :design-minutes="config.autonomyMin"
             :selected-ah="config.selectedCellAh"
+            :max-covered-minutes="sizing.maxKtMinutes"
             :height="252"
             @select="setAutonomy"
           />
@@ -676,6 +723,11 @@ const gaugeSummary = computed(() => [
   padding: 8px 4px 0;
   border-top: 1px solid var(--line-soft);
   font-size: 9px;
+  line-height: 1.5;
+}
+
+.warn-text {
+  color: var(--accent);
 }
 
 .presets {

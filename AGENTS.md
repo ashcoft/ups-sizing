@@ -7,7 +7,7 @@ model. Read `README.md` for the calculation method and data provenance.
 ## Commands
 
 ```bash
-npm run dev       # Vite on 0.0.0.0:12000 (allowedHosts enabled for the preview proxy)
+npm run dev       # Vite on 0.0.0.0:12000; set VITE_ALLOWED_HOSTS for a proxy domain
 npm run build     # vue-tsc --noEmit && vite build
 npm run verify    # bundles scripts/verify.ts with esbuild and asserts workbook values
 ```
@@ -21,9 +21,12 @@ extend it when changing `src/lib/sizing.ts` or `src/data/workbook.ts`.
   units drawing in each phase), `SizingConfig`.
 - `src/store.ts` — module-level reactive singleton: project ref, computed totals/sizing/checks,
   persistence to `localStorage` (`dcups.project.v1`), CRUD actions, theme, hash navigation, toasts.
-- `src/lib/sizing.ts` — pure functions. `computeTotals`, `ktAt` (log–log interpolation),
-  `computeSizing` (BOC/CONT/EOD profile → IEEE 485 section method), `autonomySweep`,
-  `projectChecks`. Keep it framework-free.
+- `src/lib/sizing.ts` — pure functions. `computeTotals`, `activeUnits`, `ktAt` (log–log
+  interpolation), `computeSizing` (BOC/CONT/EOD profile → IEEE 485 section method, Kt coverage
+  flags), `autonomySweep`, `projectChecks` (each check carries `required`). Keep it framework-free.
+- `src/lib/normalize.ts` — pure import/localStorage normalisation: id creation, numeric clamping,
+  Kt table de-duplication, empty-register preservation. Covered by `scripts/verify.ts`.
+- `src/lib/kt.ts` — Kt row edit validation and next-duration selection.
 - `src/components/views/*` — overview, load register, battery sizing, calculation report.
 - Charts are hand-written SVG with `useSize`; no chart dependency.
 
@@ -64,3 +67,5 @@ extend it when changing `src/lib/sizing.ts` or `src/data/workbook.ts`.
   `ashcoft/psa-tool`, so keep them in sync when bumping.
 - Pages must be enabled with `build_type: workflow`; the GHCR package needs a one-time visibility
   change to public if anonymous pulls are expected.
+- Verification is the regression gate: 42 assertions cover the workbook baseline, Kt coverage,
+  import clamping, active-unit clamping, CSV neutralising and verdict rules.

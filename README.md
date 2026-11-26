@@ -21,6 +21,10 @@ npm run build:pages  # production bundle with the /ups-sizing/ base path
 npm run verify       # calculation assertions against the source workbook
 ```
 
+When the dev server is opened through a proxy domain (remote workspace, tunnel), allow that
+host explicitly: `VITE_ALLOWED_HOSTS=.example.dev npm run dev`. Vite's default host check applies
+otherwise.
+
 ### Container
 
 The image is a two-stage build: Node compiles the site, nginx serves the static bundle as an
@@ -101,7 +105,9 @@ relay rows with blank total cells, so the sum here (8,143.97 W) is 128 W higher 
 (8,015.97 W). Phase totals — which drive the sizing — match the source exactly.
 
 Editing loads never rewrites the source file. Project state is saved to `localStorage`; JSON
-export/import and CSV export are available from the register and report views.
+export/import and CSV export are available from the register and report views. Deletions and the
+workbook reset are undoable from the toast, imported JSON is type-checked and clamped, and CSV
+export neutralises spreadsheet formulas in user-entered text.
 
 ## Structure
 

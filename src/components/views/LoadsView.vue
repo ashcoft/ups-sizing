@@ -18,6 +18,7 @@ import {
 import type { LoadItem, LoadSection, LoadSystem, PhaseKey } from '@/types'
 import { PHASES } from '@/types'
 import { fmt, fmtKw, fmtWatts, clamp, toNumber } from '@/lib/format'
+import { activeUnits } from '@/lib/sizing'
 
 const search = ref('')
 const onlyContributing = ref(false)
@@ -31,9 +32,9 @@ function sumItems(items: LoadItem[]) {
   const sum = emptySum()
   for (const item of items) {
     sum.connectedW += item.qty * item.watt
-    sum.bocW += item.active.boc * item.watt
-    sum.contW += item.active.cont * item.watt
-    sum.eodW += item.active.eod * item.watt
+    sum.bocW += activeUnits(item, 'boc') * item.watt
+    sum.contW += activeUnits(item, 'cont') * item.watt
+    sum.eodW += activeUnits(item, 'eod') * item.watt
     sum.items += 1
   }
   return sum
@@ -80,6 +81,9 @@ const shownItems = computed(() =>
 
 function setQty(item: LoadItem, value: number): void {
   item.qty = Math.max(1, Math.round(value))
+}
+
+function clampActive(item: LoadItem): void {
   for (const phase of PHASES) {
     if (item.active[phase.key] > item.qty) item.active[phase.key] = item.qty
   }
@@ -112,6 +116,13 @@ const phaseColor: Record<PhaseKey, string> = {
   boc: 'var(--accent)',
   cont: 'var(--teal)',
   eod: 'var(--indigo)',
+}
+
+function phaseWindow(phase: PhaseKey): string {
+  const autonomy = project.value.sizing.autonomyMin
+  if (phase === 'boc') return `0 – 1 min`
+  if (phase === 'cont') return `1 – ${Math.max(autonomy - 1, 1)} min`
+  return `${Math.max(autonomy - 1, 1)} – ${autonomy} min`
 }
 </script>
 
@@ -160,7 +171,7 @@ const phaseColor: Record<PhaseKey, string> = {
       <div class="totals-strip__spacer" />
       <div class="totals-strip__legend">
         <span v-for="phase in PHASES" :key="phase.key" class="legend__item" :style="{ color: phaseColor[phase.key] }">
-          <span class="legend__swatch" /> {{ phase.short }} <span class="dim">{{ phase.window }}</span>
+          <span class="legend__swatch" /> {{ phase.short }} <span class="dim">{{ phaseWindow(phase.key) }}</span>
         </span>
       </div>
     </section>
@@ -328,6 +339,7 @@ const phaseColor: Record<PhaseKey, string> = {
                     aria-label="Panel quantity"
                     :value="item.qty"
                     @input="setQty(item, toNumber(($event.target as HTMLInputElement).value, item.qty))"
+                    @change="clampActive(item)"
                   />
                 </td>
                 <td>

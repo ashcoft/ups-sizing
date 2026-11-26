@@ -1,106 +1,14 @@
 import { computed, ref, watch } from 'vue'
 import { workbookProject } from './data/workbook'
-import type { KtPoint, LoadItem, LoadSection, LoadSystem, PhaseKey, Project } from './types'
-import { PHASES } from './types'
+import type { LoadItem, Project } from './types'
 import { allItems, autonomySweep, computeSizing, computeTotals, projectChecks, systemTotals, type Totals } from './lib/sizing'
+import { clone, normalizeItem, normalizeProject, uid } from './lib/normalize'
+import { applyKtEdit, nextKtDuration } from './lib/kt'
 import { download, csvCell, fmt, fmtMinutes } from './lib/format'
 import { systemColor } from './lib/palette'
 
 const STORAGE_KEY = 'dcups.project.v1'
 const THEME_KEY = 'dcups.theme'
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
-}
-
-function uid(prefix: string): string {
-  const suffix =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2, 10)
-  return `${prefix}-${suffix}`
-}
-
-function normalizeItem(raw: Partial<LoadItem> & { active?: Partial<Record<PhaseKey, number>> }): LoadItem {
-  const qty = Math.max(1, Number(raw.qty) || 1)
-  const watt = Math.max(0, Number(raw.watt) || 0)
-  const active = { boc: 0, cont: 0, eod: 0 } as Record<PhaseKey, number>
-  for (const phase of PHASES) {
-    active[phase.key] = Math.min(qty, Math.max(0, Number(raw.active?.[phase.key]) || 0))
-  }
-  return {
-    id: raw.id || uid('item'),
-    code: String(raw.code ?? ''),
-    description: String(raw.description ?? 'Untitled load'),
-    qty,
-    watt,
-    active,
-    remark: raw.remark ?? null,
-  }
-}
-
-function normalizeSection(raw: Partial<LoadSection>): LoadSection {
-  return {
-    id: raw.id || uid('sec'),
-    code: String(raw.code ?? ''),
-    name: String(raw.name ?? 'Untitled section'),
-    items: Array.isArray(raw.items) ? raw.items.map(normalizeItem) : [],
-  }
-}
-
-function normalizeSystem(raw: Partial<LoadSystem>): LoadSystem {
-  return {
-    id: raw.id || uid('sys'),
-    code: String(raw.code ?? ''),
-    name: String(raw.name ?? 'Untitled system'),
-    doc: raw.doc ?? null,
-    note: raw.note ?? null,
-    items: Array.isArray(raw.items) ? raw.items.map(normalizeItem) : [],
-    sections: Array.isArray(raw.sections) ? raw.sections.map(normalizeSection) : [],
-  }
-}
-
-function numOr(value: unknown, fallback: number): number {
-  const parsed = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-function clampNum(value: unknown, fallback: number, min: number, max: number): number {
-  return Math.min(Math.max(numOr(value, fallback), min), max)
-}
-
-export function normalizeProject(raw: Partial<Project>): Project {
-  const base = clone(workbookProject)
-  const sizing = { ...base.sizing, ...(raw.sizing ?? {}) }
-  sizing.ktTable = Array.isArray(sizing.ktTable) && sizing.ktTable.length > 1
-    ? [...sizing.ktTable]
-        .map((point: KtPoint) => ({ minutes: Number(point.minutes) || 0, kt: Number(point.kt) || 0 }))
-        .sort((a, b) => a.minutes - b.minutes)
-    : base.sizing.ktTable
-  sizing.catalog = Array.isArray(sizing.catalog) && sizing.catalog.length > 0
-    ? [...sizing.catalog].map(Number).filter((n) => n > 0).sort((a, b) => a - b)
-    : base.sizing.catalog
-
-  sizing.nominalVoltage = clampNum(sizing.nominalVoltage, base.sizing.nominalVoltage, 12, 1000)
-  sizing.minVoltage = clampNum(sizing.minVoltage, base.sizing.minVoltage, 6, sizing.nominalVoltage)
-  sizing.autonomyMin = Math.round(clampNum(sizing.autonomyMin, base.sizing.autonomyMin, 3, 1440))
-  sizing.agingFactor = clampNum(sizing.agingFactor, base.sizing.agingFactor, 0, 1)
-  sizing.spareFactor = clampNum(sizing.spareFactor, base.sizing.spareFactor, 0, 2)
-  sizing.tempFactor = clampNum(sizing.tempFactor, base.sizing.tempFactor, 0.5, 2)
-  sizing.strings = Math.round(clampNum(sizing.strings, base.sizing.strings, 1, 8))
-  sizing.selectedCellAh = clampNum(sizing.selectedCellAh, base.sizing.selectedCellAh, 0, 100000)
-  sizing.redundancy = String(sizing.redundancy ?? base.sizing.redundancy)
-  sizing.cellModel = String(sizing.cellModel ?? base.sizing.cellModel)
-  sizing.ktSource = String(sizing.ktSource ?? base.sizing.ktSource)
-
-  return {
-    meta: { ...base.meta, ...(raw.meta ?? {}) },
-    systems: Array.isArray(raw.systems) && raw.systems.length > 0 ? raw.systems.map(normalizeSystem) : base.systems,
-    sizing,
-    notes: Array.isArray(raw.notes) ? raw.notes : base.notes,
-    references: Array.isArray(raw.references) ? raw.references : base.references,
-  }
-}
 
 function loadInitialProject(): Project {
   try {
@@ -136,18 +44,22 @@ export const itemCount = computed(() =>
 
 export const checksPassed = computed(() => checks.value.filter((check) => check.ok).length)
 
+export const designOk = computed(() => checks.value.filter((check) => check.required).every((check) => check.ok))
+
 export const requiredAh = computed(() => sizing.value.requiredAh)
 
 /* ── persistence ──────────────────────────────────────────── */
 
 export const lastSaved = ref<number | null>(null)
+export const saveError = ref(false)
 
 function persist(): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(project.value))
     lastSaved.value = Date.now()
+    saveError.value = false
   } catch {
-    /* storage full or blocked — the session still works in memory */
+    saveError.value = true
   }
 }
 
@@ -342,8 +254,15 @@ export function removeSystem(systemId: string): void {
 }
 
 export function resetProject(): void {
+  const previous = clone(project.value)
   project.value = clone(workbookProject)
-  notify('Restored workbook baseline')
+  notify('Restored workbook baseline', {
+    label: 'Undo',
+    run: () => {
+      project.value = previous
+      notify('Edited project restored')
+    },
+  })
 }
 
 export function exportProjectJson(): void {
@@ -399,8 +318,16 @@ export function importProjectFile(text: string): void {
   }
 }
 
+export function setKtField(index: number, field: 'minutes' | 'kt', value: number): boolean {
+  return applyKtEdit(project.value.sizing.ktTable, index, field, value)
+}
+
 export function addKtPoint(): void {
-  project.value.sizing.ktTable.push({ minutes: 720, kt: 5.6 })
+  const table = project.value.sizing.ktTable
+  const minutes = nextKtDuration(table)
+  const anchor = [...table].sort((a, b) => a.minutes - b.minutes).at(-1) ?? { minutes: 1, kt: 1.3 }
+  const kt = Number((anchor.kt * Math.pow(minutes / anchor.minutes, 0.2157)).toFixed(2))
+  table.push({ minutes, kt })
   notify('Kt point added')
 }
 

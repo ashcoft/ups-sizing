@@ -8,9 +8,10 @@ const props = withDefaults(
     points: AutonomyPoint[]
     designMinutes: number
     selectedAh: number
+    maxCoveredMinutes?: number
     height?: number
   }>(),
-  { height: 250 },
+  { height: 250, maxCoveredMinutes: 0 },
 )
 
 const emit = defineEmits<{ select: [minutes: number] }>()
@@ -88,19 +89,27 @@ const designPoint = computed(() => {
 
 const hover = ref<AutonomyPoint | null>(null)
 
-function onMove(event: PointerEvent): void {
+function nearestAt(event: PointerEvent): AutonomyPoint {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const localX = event.clientX - rect.left
-  const minutes = xMin.value + ((localX - margin.left) / plotWidth.value) * (xMax.value - xMin.value)
-  const nearest = props.points.reduce((best, point) =>
+  const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+  const minutes = xMin.value + ratio * (xMax.value - xMin.value)
+  return props.points.reduce((best, point) =>
     Math.abs(point.minutes - minutes) < Math.abs(best.minutes - minutes) ? point : best,
   )
-  hover.value = nearest
 }
 
-function onClick(): void {
-  if (hover.value) emit('select', hover.value.minutes)
+function onMove(event: PointerEvent): void {
+  hover.value = nearestAt(event)
 }
+
+function onClick(event: PointerEvent): void {
+  emit('select', nearestAt(event).minutes)
+}
+
+const coverageX = computed(() => {
+  if (props.maxCoveredMinutes <= 0 || props.maxCoveredMinutes >= xMax.value) return null
+  return Math.max(sx(props.maxCoveredMinutes), margin.left)
+})
 
 const tipStyle = computed(() => {
   if (!hover.value) return {}
@@ -121,6 +130,9 @@ const tipStyle = computed(() => {
           <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.18" />
           <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.01" />
         </linearGradient>
+        <pattern id="coverage-hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="var(--muted-2)" stroke-width="1.4" opacity="0.45" />
+        </pattern>
       </defs>
 
       <g>
@@ -189,6 +201,26 @@ const tipStyle = computed(() => {
       >
         CELL {{ fmt(selectedAh, 0) }} Ah
       </text>
+
+      <g v-if="coverageX !== null">
+        <rect
+          :x="coverageX"
+          :y="margin.top"
+          :width="margin.left + plotWidth - coverageX"
+          :height="plotHeight"
+          fill="url(#coverage-hatch)"
+        />
+        <text
+          :x="margin.left + plotWidth - 6"
+          :y="margin.top + 12"
+          text-anchor="end"
+          font-size="8.5"
+          letter-spacing="0.08em"
+          fill="var(--muted-2)"
+        >
+          BEYOND KT TABLE
+        </text>
+      </g>
 
       <path :d="areaPath" fill="url(#autonomy-fill)" />
       <path :d="linePath" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" />
