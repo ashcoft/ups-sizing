@@ -11,7 +11,7 @@ import {
   TableProperties,
   Zap,
 } from 'lucide-vue-next'
-import { exportProjectJson, go, lastSaved, project, resetProject, sizing, theme, toasts, toggleTheme, totals, view } from '@/store'
+import { dismissToast, exportProjectJson, go, lastSaved, project, resetProject, sizing, theme, toasts, toggleTheme, totals, view, type Toast } from '@/store'
 import { fmtMinutes } from '@/lib/format'
 import OverviewView from '@/components/views/OverviewView.vue'
 import LoadsView from '@/components/views/LoadsView.vue'
@@ -42,6 +42,11 @@ const savedLabel = computed(() => {
   if (!lastSaved.value) return 'Auto-save on'
   return `Saved ${new Date(lastSaved.value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
 })
+
+function runToastAction(toast: Toast): void {
+  toast.action?.run()
+  dismissToast(toast.id)
+}
 
 const meta = computed(() => [
   { label: 'Autonomy', value: fmtMinutes(project.value.sizing.autonomyMin) },
@@ -136,6 +141,9 @@ const meta = computed(() => [
         <div v-for="toast in toasts" :key="toast.id" class="toast">
           <span class="toast__dot" />
           {{ toast.text }}
+          <button v-if="toast.action" class="toast__action" type="button" @click="runToastAction(toast)">
+            {{ toast.action.label }}
+          </button>
         </div>
       </TransitionGroup>
     </div>
@@ -190,6 +198,7 @@ const meta = computed(() => [
 }
 
 .toast {
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -208,6 +217,23 @@ const meta = computed(() => [
   height: 5px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.toast__action {
+  margin-left: 2px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--paper) 35%, transparent);
+  border-radius: 2px;
+  background: none;
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.toast__action:hover {
+  background: color-mix(in srgb, var(--paper) 14%, transparent);
 }
 
 .toast-enter-active,

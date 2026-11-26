@@ -24,6 +24,11 @@ const checks: [string, boolean, string][] = [
   ['energy 13.79 kWh', near(s.energyWh / 1000, 13.79, 0.02), (s.energyWh / 1000).toFixed(2)],
   ['smallest standard 200 Ah', smallestStandard(workbookProject.sizing.catalog, s.requiredAh) === 200, String(smallestStandard(workbookProject.sizing.catalog, s.requiredAh))],
   ['sweep covers 30..480', autonomySweep(t, workbookProject.sizing)[0].minutes === 30, `${autonomySweep(t, workbookProject.sizing).length} points`],
+  [
+    'sweep includes an out-of-range design autonomy',
+    autonomySweep(t, { ...workbookProject.sizing, autonomyMin: 600 }).some((point) => point.minutes === 600),
+    `${autonomySweep(t, { ...workbookProject.sizing, autonomyMin: 600 }).length} points`,
+  ],
   ['autonomy 120 lower duty', computeSizing(t, workbookProject.sizing, 120).requiredAh < s.requiredAh, computeSizing(t, workbookProject.sizing, 120).requiredAh.toFixed(1)],
 ]
 

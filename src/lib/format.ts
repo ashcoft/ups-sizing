@@ -1,9 +1,20 @@
+const formatters = new Map<number, Intl.NumberFormat>()
+
+function formatter(digits: number): Intl.NumberFormat {
+  let cached = formatters.get(digits)
+  if (!cached) {
+    cached = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    })
+    formatters.set(digits, cached)
+  }
+  return cached
+}
+
 export function fmt(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return '—'
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value)
+  return formatter(digits).format(value)
 }
 
 export function fmtWatts(watts: number, digits = 2): string {

@@ -60,6 +60,15 @@ function normalizeSystem(raw: Partial<LoadSystem>): LoadSystem {
   }
 }
 
+function numOr(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function clampNum(value: unknown, fallback: number, min: number, max: number): number {
+  return Math.min(Math.max(numOr(value, fallback), min), max)
+}
+
 export function normalizeProject(raw: Partial<Project>): Project {
   const base = clone(workbookProject)
   const sizing = { ...base.sizing, ...(raw.sizing ?? {}) }
@@ -71,6 +80,18 @@ export function normalizeProject(raw: Partial<Project>): Project {
   sizing.catalog = Array.isArray(sizing.catalog) && sizing.catalog.length > 0
     ? [...sizing.catalog].map(Number).filter((n) => n > 0).sort((a, b) => a - b)
     : base.sizing.catalog
+
+  sizing.nominalVoltage = clampNum(sizing.nominalVoltage, base.sizing.nominalVoltage, 12, 1000)
+  sizing.minVoltage = clampNum(sizing.minVoltage, base.sizing.minVoltage, 6, sizing.nominalVoltage)
+  sizing.autonomyMin = Math.round(clampNum(sizing.autonomyMin, base.sizing.autonomyMin, 3, 1440))
+  sizing.agingFactor = clampNum(sizing.agingFactor, base.sizing.agingFactor, 0, 1)
+  sizing.spareFactor = clampNum(sizing.spareFactor, base.sizing.spareFactor, 0, 2)
+  sizing.tempFactor = clampNum(sizing.tempFactor, base.sizing.tempFactor, 0.5, 2)
+  sizing.strings = Math.round(clampNum(sizing.strings, base.sizing.strings, 1, 8))
+  sizing.selectedCellAh = clampNum(sizing.selectedCellAh, base.sizing.selectedCellAh, 0, 100000)
+  sizing.redundancy = String(sizing.redundancy ?? base.sizing.redundancy)
+  sizing.cellModel = String(sizing.cellModel ?? base.sizing.cellModel)
+  sizing.ktSource = String(sizing.ktSource ?? base.sizing.ktSource)
 
   return {
     meta: { ...base.meta, ...(raw.meta ?? {}) },
@@ -168,17 +189,20 @@ export function toggleTheme(): void {
 export interface Toast {
   id: number
   text: string
+  action?: { label: string; run: () => void }
 }
 
 export const toasts = ref<Toast[]>([])
 let toastId = 0
 
-export function notify(text: string): void {
+export function dismissToast(id: number): void {
+  toasts.value = toasts.value.filter((toast) => toast.id !== id)
+}
+
+export function notify(text: string, action?: Toast['action']): void {
   const id = (toastId += 1)
-  toasts.value = [...toasts.value, { id, text }]
-  window.setTimeout(() => {
-    toasts.value = toasts.value.filter((toast) => toast.id !== id)
-  }, 2800)
+  toasts.value = [...toasts.value, { id, text, action }]
+  window.setTimeout(() => dismissToast(id), action ? 7000 : 2800)
 }
 
 /* ── navigation ───────────────────────────────────────────── */
@@ -279,20 +303,42 @@ export function duplicateItem(itemId: string): void {
 export function removeItem(itemId: string): void {
   const found = locateItem(itemId)
   if (!found) return
-  found.list.splice(found.index, 1)
-  notify('Load removed')
+  const [removed] = found.list.splice(found.index, 1)
+  notify('Load removed', {
+    label: 'Undo',
+    run: () => {
+      found.list.splice(Math.min(found.index, found.list.length), 0, removed)
+      notify('Load restored')
+    },
+  })
 }
 
 export function removeSection(systemId: string, sectionId: string): void {
   const system = project.value.systems.find((entry) => entry.id === systemId)
   if (!system) return
-  system.sections = system.sections.filter((section) => section.id !== sectionId)
-  notify('Section removed')
+  const index = system.sections.findIndex((section) => section.id === sectionId)
+  if (index < 0) return
+  const [removed] = system.sections.splice(index, 1)
+  notify('Section removed', {
+    label: 'Undo',
+    run: () => {
+      system.sections.splice(Math.min(index, system.sections.length), 0, removed)
+      notify('Section restored')
+    },
+  })
 }
 
 export function removeSystem(systemId: string): void {
-  project.value.systems = project.value.systems.filter((system) => system.id !== systemId)
-  notify('System removed')
+  const index = project.value.systems.findIndex((system) => system.id === systemId)
+  if (index < 0) return
+  const [removed] = project.value.systems.splice(index, 1)
+  notify('System removed', {
+    label: 'Undo',
+    run: () => {
+      project.value.systems.splice(Math.min(index, project.value.systems.length), 0, removed)
+      notify('System restored')
+    },
+  })
 }
 
 export function resetProject(): void {

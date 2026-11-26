@@ -234,12 +234,14 @@ export interface AutonomyPoint {
 }
 
 export function autonomySweep(totals: Totals, config: SizingConfig, from = 30, to = 480, step = 15): AutonomyPoint[] {
+  const start = Math.min(from, config.autonomyMin)
+  const end = Math.max(to, config.autonomyMin)
   const points: AutonomyPoint[] = []
-  for (let minutes = from; minutes <= to; minutes += step) {
+  for (let minutes = start; minutes <= end; minutes += step) {
     const result = computeSizing(totals, config, minutes)
     points.push({ minutes, requiredAh: result.requiredAh, energyWh: result.energyWh })
   }
-  if (!points.some((point) => point.minutes === config.autonomyMin) && config.autonomyMin >= from && config.autonomyMin <= to) {
+  if (!points.some((point) => point.minutes === config.autonomyMin)) {
     const result = computeSizing(totals, config, config.autonomyMin)
     points.push({ minutes: config.autonomyMin, requiredAh: result.requiredAh, energyWh: result.energyWh })
     points.sort((a, b) => a.minutes - b.minutes)
