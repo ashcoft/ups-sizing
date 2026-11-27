@@ -12,7 +12,7 @@ COPY . .
 RUN npm run build
 
 # ---- runtime ---------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runtime
 
 LABEL org.opencontainers.image.title="DC UPS Sizing Studio" \
       org.opencontainers.image.description="DC UPS load list and battery sizing workbench" \
